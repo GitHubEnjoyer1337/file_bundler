@@ -1,6 +1,11 @@
 [package]
-name = "llmconcat"
+name = "file_bundler"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+walkdir = "2.5.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+regex = "1.10"
+anyhow = "1.0"
