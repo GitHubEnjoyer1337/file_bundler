@@ -1,0 +1,7 @@
+exclude_dirs:
+  - plugin
+exclude_files:
+  - test.at
+  - lazy-lock.json
+exclude_patterns:
+  - ".yaml"
