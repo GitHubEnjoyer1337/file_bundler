@@ -1,3 +1,4 @@
+use std::env;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -14,35 +15,40 @@ struct Config {
 }
 
 fn main() -> Result<()> {
-    let cwd = std::env::current_dir().context("Failed to get current directory")?;
-    let config_path = cwd.join("config.yaml");
+    let args: Vec<String> = env::args().collect();
+    if args.len() != 4 {
+        println!("Usage: {} <dir_location> <output_dir> <location_of_config>", args[0]);
+        return Ok(());
+    }
+    let dir_to_bundle = PathBuf::from(&args[1]);
+    let output_dir = PathBuf::from(&args[2]);
+    let config_path = PathBuf::from(&args[3]);
+
     let config: Config = if config_path.exists() {
-        let config_str = fs::read_to_string(&config_path).context("Failed to read config.yaml")?;
-        serde_yaml::from_str(&config_str).context("Failed to parse config.yaml")?
+        let config_str = fs::read_to_string(&config_path).context("Failed to read config")?;
+        serde_yaml::from_str(&config_str).context("Failed to parse config")?
     } else {
-        println!("No config.yaml found, using defaults.");
+        println!("No config found at {}, using defaults.", config_path.display());
         Config::default()
     };
 
     let exclude_dir_set: Vec<_> = config.exclude_dirs.iter().map(|s| s.as_str()).collect();
     let exclude_file_set: Vec<_> = config.exclude_files.iter().map(|s| s.as_str()).collect();
-
     let mut glob_builder = GlobSetBuilder::new();
     for pat in &config.exclude_patterns {
         glob_builder.add(Glob::new(pat).context(format!("Invalid glob pattern: {}", pat))?);
     }
     let exclude_pattern_set = glob_builder.build().context("Failed to build globset")?;
 
-    let output_path = cwd.join("bundle.txt");
+    let output_path = output_dir.join("bundle.txt");
     let mut output_file = File::create(&output_path).context("Failed to create bundle.txt")?;
 
-    for entry in WalkDir::new(&cwd).into_iter().filter_map(|e| e.ok()) {
-        if should_skip(&entry, &cwd, &exclude_dir_set, &exclude_file_set, &exclude_pattern_set) {
+    for entry in WalkDir::new(&dir_to_bundle).into_iter().filter_map(|e| e.ok()) {
+        if should_skip(&entry, &dir_to_bundle, &exclude_dir_set, &exclude_file_set, &exclude_pattern_set) {
             continue;
         }
-
         if entry.file_type().is_file() {
-            if let Err(e) = process_file(&entry.path(), &cwd, &mut output_file) {
+            if let Err(e) = process_file(entry.path(), &dir_to_bundle, &mut output_file) {
                 eprintln!("Warning: Failed to process {}: {}", entry.path().display(), e);
             }
         }
@@ -54,14 +60,13 @@ fn main() -> Result<()> {
 
 fn should_skip(
     entry: &DirEntry,
-    cwd: &Path,
+    root: &Path,
     exclude_dirs: &[&str],
     exclude_files: &[&str],
     exclude_patterns: &GlobSet,
 ) -> bool {
-    let rel_path = entry.path().strip_prefix(cwd).unwrap_or(entry.path());
+    let rel_path = entry.path().strip_prefix(root).unwrap_or(entry.path());
     let rel_str = rel_path.to_string_lossy();
-
     if entry.file_type().is_dir() {
         exclude_dirs.iter().any(|&dir| rel_str == dir)
     } else {
@@ -75,10 +80,8 @@ fn should_skip(
     }
 }
 
-fn process_file(path: &Path, cwd: &Path, output: &mut File) -> Result<()> {
-    let rel_path = path.strip_prefix(cwd).unwrap_or(path).display();
-
-    // Check if text (try reading as UTF-8)
+fn process_file(path: &Path, root: &Path, output: &mut File) -> Result<()> {
+    let rel_path = path.strip_prefix(root).unwrap_or(path).display();
     let file = File::open(path).context("Failed to open file")?;
     let reader = BufReader::new(file);
     let mut content = String::new();
@@ -86,10 +89,8 @@ fn process_file(path: &Path, cwd: &Path, output: &mut File) -> Result<()> {
         content.push_str(&line.context("Failed to read line")?);
         content.push('\n');
     }
-
     writeln!(output, "--- START FILE: {} ---", rel_path)?;
     output.write_all(content.as_bytes())?;
     writeln!(output, "--- END FILE ---\n")?;
-
     Ok(())
 }
