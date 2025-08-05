@@ -1,0 +1,9 @@
+exclude_dirs:
+  - "dir1"
+  - "dir2"
+exclude_files:
+  - "file1.txt"
+  - "file2.txt"
+exclude_patterns:
+  - "*.log"
+  - "*.tmp"
